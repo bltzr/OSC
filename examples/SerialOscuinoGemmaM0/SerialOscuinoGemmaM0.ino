@@ -1,15 +1,24 @@
 
 #include <OSCBundle.h>
 #include <OSCBoards.h>
+#include "Adafruit_FreeTouch.h"
 
-#ifdef BOARD_HAS_USB_SERIAL
+Adafruit_FreeTouch qt_0 = Adafruit_FreeTouch(A0, OVERSAMPLE_4, RESISTOR_50K, FREQ_MODE_NONE);
+Adafruit_FreeTouch qt_1 = Adafruit_FreeTouch(A1, OVERSAMPLE_4, RESISTOR_50K, FREQ_MODE_NONE);
+Adafruit_FreeTouch qt_2 = Adafruit_FreeTouch(A2, OVERSAMPLE_4, RESISTOR_50K, FREQ_MODE_NONE);
+  Adafruit_FreeTouch *p[3] = { &qt_0, &qt_1, &qt_2 };
+
+#undef NUM_DIGITAL_PINS
+#define NUM_DIGITAL_PINS 3
+#undef NUM_ANALOG_PINS
+#define NUM_ANALOG_PINS 3
+
 #include <SLIPEncodedUSBSerial.h>
-SLIPEncodedUSBSerial SLIPSerial( thisBoardsSerialUSB );
-#else
-#include <SLIPEncodedSerial.h>
- SLIPEncodedSerial SLIPSerial(Serial1);
-#endif
+SLIPEncodedUSBSerial SLIPSerial( Serial );
 
+//outgoing messages
+
+OSCBundle bundleOUT;
 
 //converts the pin to an osc address
 char * numToOSCAddress( int pin){
@@ -27,6 +36,7 @@ char * numToOSCAddress( int pin){
     s[i] = '/';
     return &s[i];
 }
+
 /**
  * ROUTES
  * 
@@ -56,11 +66,10 @@ void routeDigital(OSCMessage &msg, int addrOffset ){
       if (msg.isInt(0)){
         pinMode(pin, OUTPUT);
         digitalWrite(pin, (msg.getInt(0)>0) ? HIGH:LOW);
-      }      //otherwise it's an analog read
+       } 
       else if(msg.isFloat(0)){
         analogWrite(pin, (int)(msg.getFloat(0)*255.0f));
       }
-
      
       //otherwise it's an digital read
       //with a pullup?
@@ -73,10 +82,7 @@ void routeDigital(OSCMessage &msg, int addrOffset ){
         strcat(outputAddress, numToOSCAddress(pin));
         strcat(outputAddress,"/u");
         //do the digital read and send the results
-        { 
-            OSCMessage  msgOut(outputAddress); msgOut.add(digitalRead(pin)); 
-            SLIPSerial.beginPacket(); msgOut.send(SLIPSerial); SLIPSerial.endPacket(); 
-        } 
+        bundleOUT.add(outputAddress).add(digitalRead(pin));       
       } //else without a pullup   
       else {
         //set the pinmode
@@ -86,10 +92,7 @@ void routeDigital(OSCMessage &msg, int addrOffset ){
         strcpy(outputAddress, "/d");
         strcat(outputAddress, numToOSCAddress(pin));
         //do the digital read and send the results
-        {
-            OSCMessage  msgOut(outputAddress); msgOut.add(digitalRead(pin));
-            SLIPSerial.beginPacket(); msgOut.send(SLIPSerial); SLIPSerial.endPacket();
-        }  
+        bundleOUT.add(outputAddress).add(digitalRead(pin));         
       }
     }
   }
@@ -119,7 +122,7 @@ void routeAnalog(OSCMessage &msg, int addrOffset ){
       if (msg.isInt(0)){
         pinMode(analogInputToDigitalPin(pin), OUTPUT);
         digitalWrite(analogInputToDigitalPin(pin), (msg.getInt(0) > 0)? HIGH: LOW);
-      } //otherwise it's an analog read
+      } 
       else if(msg.isFloat(0)){
         analogWrite(pin, (int)(msg.getFloat(0)*255.0f));
       }
@@ -135,16 +138,14 @@ void routeAnalog(OSCMessage &msg, int addrOffset ){
         strcpy(outputAddress, "/a");
         strcat(outputAddress, numToOSCAddress(pin));
         strcat(outputAddress,"/u");
-        //do the analog read and send the results
-        {
-            OSCMessage  msgOut(outputAddress); msgOut.add((int32_t)analogRead(pin));
-            SLIPSerial.beginPacket();msgOut.send(SLIPSerial); SLIPSerial.endPacket();
-        }  
+       //do the analog read and send the results
+        bundleOUT.add(outputAddress).add((int32_t)analogRead(pin));       
       } //else without a pullup 
 #endif
+
       else {
-        //set the pinmode
-        // This fails on Arduino 1.04 on Leanardo, I added this to fix it: #define analogInputToDigitalPin(p)  (p+18)
+         //otherwise it's an analog read
+       //set the pinmode
 
         pinMode(analogInputToDigitalPin(pin), INPUT);
         //setup the output address which should be /a/(pin)
@@ -152,15 +153,13 @@ void routeAnalog(OSCMessage &msg, int addrOffset ){
         strcpy(outputAddress, "/a");
         strcat(outputAddress, numToOSCAddress(pin));
         //do the analog read and send the results
-        {
-            OSCMessage  msgOut(outputAddress); msgOut.add((int32_t)analogRead(pin));
-            SLIPSerial.beginPacket(); msgOut.send(SLIPSerial); SLIPSerial.endPacket();
-        }
+        bundleOUT.add(outputAddress).add((int32_t)analogRead(pin));         
       }
     }
   }
 }
-#ifdef BOARD_HAS_TONE
+
+#if  1
 /**
  * TONE
  * 
@@ -203,42 +202,24 @@ void routeTone(OSCMessage &msg, int addrOffset ){
 #endif
 
 
-#ifdef  BOARD_HAS_CAPACITANCE_SENSING
-#if  defined(__MKL26Z64__) 
-// teensy 3.0LC
-#define NTPINS 11
-const int cpins[NTPINS] = {22,23,19,18,17,16,15,0,1,3,4 }; 
-#elif defined(__MK66FX1M0__)
-// teensy 3.6
-#define NTPINS 12
-const int cpins[NTPINS] = {0,1,14,15,16,17,18,19,22,23,29,30 }; 
-#else 
-//Teensy 3.1 3.2
-#define NTPINS 12
-const int cpins[NTPINS] = {22,23,19,18,17,16,15,0,1,25,32, 33 }; 
-#endif
+
 
 void routeTouch(OSCMessage &msg, int addrOffset )
 {
-  for(int i=0;i<NTPINS;++i)
+    for(int i=0;i<3;++i)
     {
-        const char *name = numToOSCAddress(cpins[i]);
-    int pinMatched = msg.match(name, addrOffset);
-        if(pinMatched)
-        {
+        const char *name = numToOSCAddress(i);
+        int pinMatched = msg.match(name, addrOffset);
+        if(pinMatched && p[i])
+        {  
+           
            char outputAddress[9];
             strcpy(outputAddress, "/c");
             strcat(outputAddress, name);
-            {
-                OSCMessage  msgOut(outputAddress); msgOut.add(touchRead(cpins[i]));
-                SLIPSerial.beginPacket(); msgOut.send(SLIPSerial); SLIPSerial.endPacket();
-            }
-
+            bundleOUT.add(outputAddress).add(p[i]->measure());
         }
     }
 }
-#endif
-
 
 /**
  * SYSTEM MESSAGES
@@ -254,35 +235,24 @@ void routeTouch(OSCMessage &msg, int addrOffset )
  */
 // 
 void routeSystem(OSCMessage &msg, int addrOffset ){
-  
-#ifdef BOARD_HAS_DIE_TEMPERATURE_SENSOR
-  if (msg.fullMatch("/t", addrOffset)){
-    { OSCMessage  msgOut("/s/t"); msgOut.add(getTemperature());         SLIPSerial.beginPacket();msgOut.send(SLIPSerial); SLIPSerial.endPacket(); }
-  }
-#endif 
-#ifdef BOARD_HAS_DIE_POWER_SUPPLY_MEASUREMENT
-  if (msg.fullMatch("/s", addrOffset)){
-    { OSCMessage  msgOut("/s/s"); msgOut.add(getSupplyVoltage());         SLIPSerial.beginPacket();msgOut.send(SLIPSerial); SLIPSerial.endPacket(); }
-  }
-#endif
+
   if (msg.fullMatch("/m", addrOffset)){
-    { OSCMessage  msgOut("/s/m"); msgOut.add((int32_t)micros());         SLIPSerial.beginPacket();msgOut.send(SLIPSerial); SLIPSerial.endPacket(); }
+    bundleOUT.add("/s/m").add((int32_t)micros());
   }
   if (msg.fullMatch("/d", addrOffset)){
-    { OSCMessage  msgOut("/s/d"); msgOut.add(NUM_DIGITAL_PINS);         SLIPSerial.beginPacket();msgOut.send(SLIPSerial); SLIPSerial.endPacket(); }
+    bundleOUT.add("/s/d").add(NUM_DIGITAL_PINS);
   }
   if (msg.fullMatch("/a", addrOffset)){
-    { OSCMessage  msgOut("/s/a"); msgOut.add(NUM_ANALOG_INPUTS);         SLIPSerial.beginPacket();msgOut.send(SLIPSerial); SLIPSerial.endPacket(); }
+    bundleOUT.add("/s/a").add(NUM_ANALOG_INPUTS);
   }
   if (msg.fullMatch("/l", addrOffset)){
-
     if (msg.isInt(0)){
-         pinMode(LED_BUILTIN, OUTPUT);
-        int i = msg.getInt(0);
+             pinMode(LED_BUILTIN, OUTPUT);
+      int i = msg.getInt(0);
         pinMode(LED_BUILTIN, OUTPUT);
         digitalWrite(LED_BUILTIN, (i > 0)? HIGH: LOW);
-        { OSCMessage  msgOut("/s/l"); msgOut.add(i);         SLIPSerial.beginPacket();msgOut.send(SLIPSerial); SLIPSerial.endPacket(); }
-        }
+        bundleOUT.add("/s/l").add(i);
+      }
   }
 }
 
@@ -291,43 +261,45 @@ void routeSystem(OSCMessage &msg, int addrOffset ){
  * 
  * setup and loop, bundle receiving/sending, initial routing
  */
-void setup() {
-    SLIPSerial.begin(9600);   // set this as high as you can reliably run on your platform
-}
 
+
+void setup() {
+    SLIPSerial.begin(115200);   // set this as high as you can reliably run on your platform
+    for(int i=0; i<3; ++i)
+      if(!p[i]->begin())
+              p[i] =0;
+}
 
 //reads and routes the incoming messages
 void loop(){ 
-    OSCBundle bundleIN;
-    int size;
-    while(!SLIPSerial.endofPacket())
-        if ((size =SLIPSerial.available()) > 0)
-        {
-           while(size--)
-              bundleIN.fill(SLIPSerial.read());
-        }
+  OSCBundle bundleIN;
+   int size;
 
+    while(!SLIPSerial.endofPacket())
+     if ((size =SLIPSerial.available()) > 0)
+      {
+         while(size--)
+            bundleIN.fill(SLIPSerial.read());
+      }
+      
     if(!bundleIN.hasError())
     {
-        bundleIN.route("/s", routeSystem);
-        bundleIN.route("/a", routeAnalog);
-        bundleIN.route("/d", routeDigital);
-#ifdef BOARD_HAS_TONE
-        bundleIN.route("/tone", routeTone);
-#endif
-#ifdef BOARD_HAS_CAPACITANCE_SENSING
-    bundleIN.route("/c", routeTouch);
-#endif
+      bundleIN.route("/s", routeSystem);
+      bundleIN.route("/a", routeAnalog);
+      bundleIN.route("/d", routeDigital);
+      bundleIN.route("/tone", routeTone);
+       bundleIN.route("/c", routeTouch);
     }
+    bundleIN.empty();
+
+ 
+//send the outgoing message
+  SLIPSerial.beginPacket();
+    bundleOUT.send(SLIPSerial);
+  SLIPSerial.endPacket();
+  bundleOUT.empty();
+
 }
-
-
-
-
-
-
-
-
 
 
 

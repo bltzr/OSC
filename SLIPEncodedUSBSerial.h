@@ -10,23 +10,21 @@ Extends the Serial class to encode SLIP over serial
 #include <Stream.h>
 
 
-#if (defined(TEENSYDUINO) && defined(USB_SERIAL)) || (!defined(TEENSYDUINO) && defined(__AVR_ATmega32U4__)) || defined(__SAM3X8E__) || (defined(_USB) && defined(_USE_USB_FOR_SERIAL_)) || defined(BOARD_maple_mini)
+#if (defined(TEENSYDUINO) && defined(USB_SERIAL)) || (!defined(TEENSYDUINO) && defined(__AVR_ATmega32U4__)) || defined(__SAM3X8E__) || (defined(_USB) && defined(_USE_USB_FOR_SERIAL_))  || defined(_SAMD21_) || (defined(__PIC32MX__) || defined(__PIC32MZ__))
 
 
 //import the serial USB object
 #if defined(TEENSYDUINO) && defined (__arm__)
+#if !defined(USB_HOST_TEENSY36_)
 #include <usb_serial.h>
+#endif
 #elif defined(TEENSYDUINO) && defined (__AVR__)
 #include <usb_api.h>
-#elif defined(BOARD_maple_mini)
-#include <usb_serial.h>
-#elif defined(__SAM3X8E__)
+#elif defined(__SAM3X8E__)  || defined(_SAMD21_) 
 #include <USB/USBAPI.h>
-#elif defined(__PIC32MX__)
-#include "HardwareSerial.h"
+#elif (defined(__PIC32MX__) || defined(__PIC32MZ__))
+#include <USB.h>
 #elif defined(__AVR_ATmega32U4__)
-// leonardo
-//#include "Platform.h"
 #include "USBAPI.h"
 #include <avr/wdt.h>    
 #else
@@ -42,11 +40,16 @@ private:
 //different type for each platform
 
 #if  defined(CORE_TEENSY) 
-    usb_serial_class
-#elif defined(__SAM3X8E__) || defined(__AVR_ATmega32U4__)
-Serial_
-#elif defined(__PIC32MX__) || defined(BOARD_maple_mini)
+#if defined(USB_HOST_TEENSY36)
     USBSerial
+#else
+    usb_serial_class
+#endif
+#elif defined(__SAM3X8E__) || defined(__AVR_ATmega32U4__) || defined(_SAMD21_)  || defined(__ARM__)
+Serial_
+    
+#elif (defined(__PIC32MX__) || defined(__PIC32MZ__))
+    CDCACM
 #else
 #error Unknown USBserial type	
 #endif
@@ -56,11 +59,17 @@ public:
 	SLIPEncodedUSBSerial(
 //different constructor for each platform
 #if  defined(CORE_TEENSY)
-    usb_serial_class
-#elif defined(__SAM3X8E__) || defined(__AVR_ATmega32U4__)
+#if defined(USB_HOST_TEENSY36)
+                         USBSerial
+#else
+                         usb_serial_class
+#endif
+
+#elif defined(__SAM3X8E__) || defined(__AVR_ATmega32U4__)  || defined(_SAMD21_)  || defined(__ARM__)
     Serial_
-#elif defined(__PIC32MX__) || defined(BOARD_maple_mini)
-    USBSerial
+                         
+#elif (defined(__PIC32MX__) || defined(__PIC32MZ__))
+    CDCACM
 #else
 #error Unknown USBserial type
 #endif
@@ -83,17 +92,12 @@ public:
 	bool endofPacket();
 	
 	
-//the arduino and wiring libraries have different return types for the write function
-#if  defined(WIRING) || defined(BOARD_DEFS_H)
-	void write(uint8_t b);
-   void write(const uint8_t *buffer, size_t size);
 
-#else
 	//overrides the Stream's write function to encode SLIP
 	size_t write(uint8_t b);
     size_t write(const uint8_t *buffer, size_t size);
 	//using Print::write;	
-#endif
+
 
 };
 #endif

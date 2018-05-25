@@ -1,5 +1,5 @@
 #include <OSCMessage.h>
-
+#include <OSCBoards.h>
 /*
 Make an OSC message and send it over serial
  */
@@ -9,17 +9,13 @@ Make an OSC message and send it over serial
 SLIPEncodedUSBSerial SLIPSerial( thisBoardsSerialUSB );
 #else
 #include <SLIPEncodedSerial.h>
- SLIPEncodedSerial SLIPSerial(Serial1);
+ SLIPEncodedSerial SLIPSerial(Serial); // Change to Serial1 or Serial2 etc. for boards with multiple serial ports that don’t have Serial
 #endif
 
 
 void setup() {
   //begin SLIPSerial just like Serial
   SLIPSerial.begin(9600);   // set this as high as you can reliably run on your platform
-#if ARDUINO >= 100
-  while(!Serial)
-    ; //Leonardo "feature"
-#endif
 }
 
 
